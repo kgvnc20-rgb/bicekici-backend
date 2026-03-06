@@ -304,17 +304,21 @@ export class WaveDispatchService implements OnModuleDestroy {
     ): Promise<{ driverId: number; distanceKm: number }[]> {
         const radiusMeters = config.radiusKm * 1000;
 
-        // PostGIS spatial query
+        // Haversine spatial query on currentLat/currentLng
         const dbCandidates = await this.prisma.$queryRaw<{ id: number }[]>`
             SELECT id
             FROM "DriverProfile"
             WHERE "isOnline" = true
               AND "isActive" = true
-              AND ST_DWithin(
-                  location,
-                  ST_SetSRID(ST_MakePoint(${job.pickupLng}, ${job.pickupLat}), 4326)::geography,
-                  ${radiusMeters}
-              )
+              AND "currentLat" IS NOT NULL
+              AND "currentLng" IS NOT NULL
+              AND (
+                    6371000 * acos(
+                        LEAST(1.0, cos(radians(${Number(job.pickupLat)})) * cos(radians(CAST("currentLat" AS double precision)))
+                        * cos(radians(CAST("currentLng" AS double precision)) - radians(${Number(job.pickupLng)}))
+                        + sin(radians(${Number(job.pickupLat)})) * sin(radians(CAST("currentLat" AS double precision))))
+                    )
+                  ) <= ${radiusMeters}
         `;
 
         // Get existing offers for this job (to exclude already-offered drivers)

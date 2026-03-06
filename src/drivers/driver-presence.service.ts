@@ -183,18 +183,14 @@ export class DriverPresenceService implements OnModuleInit, OnModuleDestroy {
     }
 
     /**
-     * Persist location to PostgreSQL + PostGIS.
-     * Uses parameterized queries ($executeRaw with Prisma.sql) — NO string interpolation.
+     * Persist location to PostgreSQL.
+     * Uses Prisma ORM with currentLat/currentLng columns.
      */
     private async persistLocationToDB(driverProfileId: number, lat: number, lng: number): Promise<void> {
         await this.prisma.driverProfile.update({
             where: { id: driverProfileId },
             data: { currentLat: lat, currentLng: lng },
         });
-        // Update PostGIS geography column with parameterized query (safe)
-        await this.prisma.$executeRaw(
-            Prisma.sql`UPDATE "DriverProfile" SET location = ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography WHERE id = ${driverProfileId}`
-        );
     }
 
     // ─── Status Management ───

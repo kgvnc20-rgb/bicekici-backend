@@ -2,14 +2,12 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider   = "postgresql"
-  url        = env("DATABASE_URL")
-  extensions = [postgis]
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model PricingRule {
@@ -81,14 +79,10 @@ model DriverProfile {
   currentLat    Decimal?
   currentLng    Decimal?
 
-  location Unsupported("geography(Point, 4326)")?
-
   serviceRequests ServiceRequest[]
 
   commissionRate Decimal @default(10.00) @db.Decimal(5, 2)
   isActive       Boolean @default(true)
-
-  @@index([location], name: "location_idx", type: Gist)
 }
 
 model ServiceRequest {

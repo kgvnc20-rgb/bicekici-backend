@@ -42,33 +42,32 @@ export class DriversService {
             update: { currentLat: lat, currentLng: lng },
         });
 
-        await this.prisma.$executeRaw`
-            UPDATE "DriverProfile"
-            SET location = ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography
-            WHERE "userId" = ${userId}
-        `;
-
         return { success: true };
     }
 
     async findNearestDrivers(lat: number, lng: number, radiusKm: number = 25, limit: number = 10) {
-        const radiusMeters = radiusKm * 1000;
-
         const drivers = await this.prisma.$queryRaw<{ id: number; userId: number; distance: number }[]>`
             SELECT 
                 d.id, 
                 d."userId", 
-                ST_Distance(
-                    d.location, 
-                    ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography
+                (
+                    6371000 * acos(
+                        LEAST(1.0, cos(radians(${lat})) * cos(radians(CAST(d."currentLat" AS double precision)))
+                        * cos(radians(CAST(d."currentLng" AS double precision)) - radians(${lng}))
+                        + sin(radians(${lat})) * sin(radians(CAST(d."currentLat" AS double precision))))
+                    )
                 ) as distance
             FROM "DriverProfile" d
             WHERE d."isOnline" = true
-            AND ST_DWithin(
-                d.location,
-                ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-                ${radiusMeters}
-            )
+              AND d."currentLat" IS NOT NULL
+              AND d."currentLng" IS NOT NULL
+              AND (
+                    6371000 * acos(
+                        LEAST(1.0, cos(radians(${lat})) * cos(radians(CAST(d."currentLat" AS double precision)))
+                        * cos(radians(CAST(d."currentLng" AS double precision)) - radians(${lng}))
+                        + sin(radians(${lat})) * sin(radians(CAST(d."currentLat" AS double precision))))
+                    )
+                  ) <= ${radiusKm * 1000}
             ORDER BY distance ASC
             LIMIT ${limit};
         `;

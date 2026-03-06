@@ -329,24 +329,30 @@ export class JobsService {
     async getNearbyAvailability(pickupLat: number, pickupLng: number) {
         const radiusMeters = 30000;
 
-        // PostGIS: online + active drivers within 30km, with distance
+        // Haversine: online + active drivers within 30km, with distance
         const candidates = await this.prisma.$queryRaw<
             { id: number; distanceMeters: number }[]
         >`
             SELECT id,
-                   ST_Distance(
-                       location,
-                       ST_SetSRID(ST_MakePoint(${pickupLng}, ${pickupLat}), 4326)::geography
+                   (
+                       6371000 * acos(
+                           LEAST(1.0, cos(radians(${pickupLat})) * cos(radians(CAST("currentLat" AS double precision)))
+                           * cos(radians(CAST("currentLng" AS double precision)) - radians(${pickupLng}))
+                           + sin(radians(${pickupLat})) * sin(radians(CAST("currentLat" AS double precision))))
+                       )
                    ) as "distanceMeters"
             FROM "DriverProfile"
             WHERE "isOnline" = true
               AND "isActive" = true
-              AND location IS NOT NULL
-              AND ST_DWithin(
-                  location,
-                  ST_SetSRID(ST_MakePoint(${pickupLng}, ${pickupLat}), 4326)::geography,
-                  ${radiusMeters}
-              )
+              AND "currentLat" IS NOT NULL
+              AND "currentLng" IS NOT NULL
+              AND (
+                    6371000 * acos(
+                        LEAST(1.0, cos(radians(${pickupLat})) * cos(radians(CAST("currentLat" AS double precision)))
+                        * cos(radians(CAST("currentLng" AS double precision)) - radians(${pickupLng}))
+                        + sin(radians(${pickupLat})) * sin(radians(CAST("currentLat" AS double precision))))
+                    )
+                  ) <= ${radiusMeters}
         `;
 
         // Redis freshness check (< 45s)
@@ -402,18 +408,25 @@ export class JobsService {
                 "pickupLng",
                 "dropoffLat",
                 "dropoffLng",
-                ST_Distance(
-                    ST_SetSRID(ST_MakePoint("pickupLng", "pickupLat"), 4326)::geography,
-                    ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography
+                (
+                    6371000 * acos(
+                        LEAST(1.0, cos(radians(CAST("pickupLat" AS double precision))) * cos(radians(${lat}))
+                        * cos(radians(${lng}) - radians(CAST("pickupLng" AS double precision)))
+                        + sin(radians(CAST("pickupLat" AS double precision))) * sin(radians(${lat})))
+                    )
                 ) as "pickupDistanceMeters"
             FROM "ServiceRequest"
             WHERE status = 'MATCHING'
               AND "currentWave" >= 4
-              AND ST_DWithin(
-                  ST_SetSRID(ST_MakePoint("pickupLng", "pickupLat"), 4326)::geography,
-                  ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-                  ${radiusMeters}
-              )
+              AND "pickupLat" IS NOT NULL
+              AND "pickupLng" IS NOT NULL
+              AND (
+                    6371000 * acos(
+                        LEAST(1.0, cos(radians(CAST("pickupLat" AS double precision))) * cos(radians(${lat}))
+                        * cos(radians(${lng}) - radians(CAST("pickupLng" AS double precision)))
+                        + sin(radians(CAST("pickupLat" AS double precision))) * sin(radians(${lat})))
+                    )
+                  ) <= ${radiusMeters}
         `;
 
         // Determine tow type based on vehicle condition
