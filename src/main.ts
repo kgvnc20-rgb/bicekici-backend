@@ -118,10 +118,18 @@ async function bootstrap() {
     const document = SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('api', app, document);
 
-    // Dev bootstrap
+    // Seed data — resilient: never crash the server if DB isn't ready
     const prisma = app.get(PrismaService);
-    await seedAdmin(prisma);
-    await seedPricingConfig(prisma);
+    try {
+        await seedAdmin(prisma);
+    } catch (e: any) {
+        console.warn(`[SEED] ⚠️ seedAdmin skipped: ${e.message}`);
+    }
+    try {
+        await seedPricingConfig(prisma);
+    } catch (e: any) {
+        console.warn(`[SEED] ⚠️ seedPricingConfig skipped: ${e.message}`);
+    }
 
     // Log DATABASE_URL on startup (redacted — no password)
     try {
