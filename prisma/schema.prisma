@@ -1,0 +1,379 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+model PricingRule {
+  id         Int      @id @default(autoincrement())
+  city       String   @unique // 'default' or City Name
+  baseFee    Decimal  @db.Decimal(10, 2)
+  pricePerKm Decimal  @db.Decimal(10, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+enum VehicleType {
+  CAR
+  SUV
+  VAN
+  MOTORCYCLE
+}
+
+enum IssueCategory {
+  BREAKDOWN   // Arıza
+  ACCIDENT    // Kaza
+  FLAT_TIRE   // Lastik
+  OUT_OF_FUEL // Yakıt bitti
+  OTHER       // Diğer
+}
+
+enum TransmissionType {
+  MANUAL
+  AUTOMATIC
+  UNKNOWN
+}
+
+enum Drivability {
+  DRIVABLE
+  NOT_DRIVABLE
+  UNKNOWN
+}
+
+model User {
+  id              Int       @id @default(autoincrement())
+  email           String?   @unique
+  password        String? // null for guest users
+  firstName       String?
+  lastName        String?
+  phone           String?   @unique
+  role            Role      @default(CUSTOMER)
+  isGuest         Boolean   @default(false)
+  sessionVersion  Int       @default(1)
+  phoneVerifiedAt DateTime?
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  driverProfile     DriverProfile?
+  driverApplication DriverApplication?
+  serviceRequests   ServiceRequest[]
+  inviteTokens      DriverInviteToken[]
+  otpVerifications  OtpVerification[]
+  invoices          Invoice[]
+  refreshTokens     RefreshToken[]
+}
+
+model DriverProfile {
+  id            Int      @id @default(autoincrement())
+  userId        Int      @unique
+  user          User     @relation(fields: [userId], references: [id])
+  licenseNumber String?
+  isOnline      Boolean  @default(false)
+  currentLat    Decimal?
+  currentLng    Decimal?
+
+  location Unsupported("geography(Point, 4326)")?
+
+  serviceRequests ServiceRequest[]
+
+  commissionRate Decimal @default(10.00) @db.Decimal(5, 2)
+  isActive       Boolean @default(true)
+
+  @@index([location], name: "location_idx", type: Gist)
+}
+
+model ServiceRequest {
+  id         Int  @id @default(autoincrement())
+  customerId Int?
+  customer   User? @relation(fields: [customerId], references: [id])
+
+  // Guest Info (used if customerId is null)
+  guestName  String?
+  guestPhone String?
+  guestEmail String?
+
+  driverId Int?
+  driver   DriverProfile? @relation(fields: [driverId], references: [id])
+
+  pickupAddress  String
+  dropoffAddress String
+  pickupLat      Decimal?
+  pickupLng      Decimal?
+  dropoffLat     Decimal?
+  dropoffLng     Decimal?
+
+  vehicleType VehicleType
+  distanceKm  Decimal
+  durationMin Int?
+
+  estimatedPrice Decimal  @db.Decimal(10, 2)
+  finalPrice     Decimal? @db.Decimal(10, 2)
+
+  // Route Details
+  pickupPlaceId  String?
+  dropoffPlaceId String?
+  routePolyline  String?
+
+  // ── Vehicle Condition (funnel screen 2) ──
+  isDrivable       Drivability?
+  transmissionType TransmissionType?
+  steeringWorks    Boolean?
+  issueCategory    IssueCategory?
+  customerNotes    String?
+
+  // ── Vehicle Identification (funnel screen 3) ──
+  vehiclePlate String?
+  vehicleBrand String?
+  vehicleModel String?
+
+  status JobStatus @default(MATCHING)
+
+  // ── Dispatch tracking ──
+  dispatchStartedAt DateTime?
+  currentWave       Int?      @default(0)
+
+  // ── Cancellation tracking ──
+  cancelReason  String?
+  cancelledBy   CancelledBy?
+  cancelledAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payments Payment[]
+  invoices Invoice[]
+  offers   JobOffer[]
+}
+
+model PricingConfig {
+  id        String  @id @default("default")
+  baseFare  Decimal @db.Decimal(10, 2)
+  perKmRate Decimal @db.Decimal(10, 2)
+  minFare   Decimal @db.Decimal(10, 2)
+
+  vehicleMultiplierCar  Decimal @db.Decimal(3, 2)
+  vehicleMultiplierSuv  Decimal @db.Decimal(3, 2)
+  vehicleMultiplierMoto Decimal @db.Decimal(3, 2)
+
+  morningPeakStart      String // "07:00"
+  morningPeakEnd        String // "10:00"
+  morningPeakMultiplier Decimal @db.Decimal(3, 2)
+
+  eveningPeakStart      String // "17:00"
+  eveningPeakEnd        String // "20:00"
+  eveningPeakMultiplier Decimal @db.Decimal(3, 2)
+
+  nightStart      String // "20:00"
+  nightEnd        String // "07:00"
+  nightMultiplier Decimal @db.Decimal(3, 2)
+
+  updatedAt DateTime @updatedAt
+}
+
+// ─── OTP Verification ───
+
+enum OtpChannel {
+  PHONE
+  EMAIL
+}
+
+model OtpVerification {
+  id           Int        @id @default(autoincrement())
+  userId       Int?
+  user         User?      @relation(fields: [userId], references: [id])
+  channel      OtpChannel
+  destination  String // phone number or email address
+  codeHash     String
+  expiresAt    DateTime
+  verifiedAt   DateTime?
+  attemptCount Int        @default(0)
+  createdAt    DateTime   @default(now())
+}
+
+// ─── Payments ───
+
+enum PaymentStatus {
+  INITIATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id                Int            @id @default(autoincrement())
+  jobId             Int
+  job               ServiceRequest @relation(fields: [jobId], references: [id])
+  provider          String         @default("iyzico")
+  providerPaymentId String?        @unique
+  amount            Decimal        @db.Decimal(10, 2)
+  currency          String         @default("TRY")
+  status            PaymentStatus  @default(INITIATED)
+  createdAt         DateTime       @default(now())
+}
+
+// ─── Invoices ───
+
+enum InvoiceType {
+  EARCHIVE
+  EFATURA
+}
+
+enum CustomerType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum InvoiceStatus {
+  PENDING
+  ISSUED
+  FAILED
+}
+
+model Invoice {
+  id                Int            @id @default(autoincrement())
+  jobId             Int
+  job               ServiceRequest @relation(fields: [jobId], references: [id])
+  userId            Int
+  user              User           @relation(fields: [userId], references: [id])
+  invoiceType       InvoiceType    @default(EARCHIVE)
+  customerType      CustomerType   @default(INDIVIDUAL)
+  fullName          String?
+  tckn              String?
+  companyName       String?
+  vkn               String?
+  email             String
+  providerInvoiceId String?        @unique
+  pdfUrl            String?
+  status            InvoiceStatus  @default(PENDING)
+  issuedAt          DateTime?
+  createdAt         DateTime       @default(now())
+}
+
+// ─── Driver Application ───
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model DriverApplication {
+  id          Int               @id @default(autoincrement())
+  userId      Int?              @unique
+  user        User?             @relation(fields: [userId], references: [id])
+  status      ApplicationStatus @default(PENDING)
+  uploadToken String?           @unique // UUID — required to upload docs publicly, invalidated on approve/reject
+
+  fullName     String
+  phone        String
+  email        String
+  city         String
+  district     String?
+  capabilities String[] // e.g. ['STANDARD', 'FLATBED', 'WINCH']
+  vehiclePlate String
+
+  rejectionReason String?
+
+  documents ApplicationDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ApplicationDocument {
+  id            Int               @id @default(autoincrement())
+  applicationId Int
+  application   DriverApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  docType  String
+  fileName String
+  filePath String
+  mimeType String
+  fileSize Int
+
+  uploadedAt DateTime @default(now())
+}
+
+model DriverInviteToken {
+  id        Int       @id @default(autoincrement())
+  token     String    @unique
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model RefreshToken {
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  deviceId   String
+  deviceName String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+enum JobStatus {
+  PENDING_PAYMENT
+  MATCHING
+  ASSIGNED
+  EN_ROUTE_TO_PICKUP
+  LOADED
+  EN_ROUTE_TO_DROPOFF
+  DELIVERED
+  CANCELED
+  NO_DRIVER_FOUND
+}
+
+enum CancelledBy {
+  CUSTOMER
+  DRIVER
+  ADMIN
+  SYSTEM
+}
+
+enum Role {
+  CUSTOMER
+  DRIVER
+  ADMIN
+}
+
+// ─── Wave Dispatch Offers ───
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELED
+}
+
+model JobOffer {
+  id          Int            @id @default(autoincrement())
+  jobId       Int
+  job         ServiceRequest @relation(fields: [jobId], references: [id])
+  driverId    Int            // DriverProfile.id
+  wave        Int            // 1, 2, 3, or 4
+  status      OfferStatus    @default(PENDING)
+  sentAt      DateTime       @default(now())
+  expiresAt   DateTime
+  respondedAt DateTime?
+
+  @@unique([jobId, driverId, wave], name: "offer_job_driver_wave_idx")
+  @@index([jobId, status], name: "offer_job_status_idx")
+  @@index([driverId, status], name: "offer_driver_status_idx")
+}
