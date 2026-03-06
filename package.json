@@ -8,10 +8,10 @@
   "scripts": {
     "build": "prisma generate && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "(prisma migrate resolve --rolled-back 20260212175140_enable_postgis_and_location || true) && prisma migrate deploy && node dist/main",
+    "start": "(prisma migrate resolve --rolled-back 20260212175140_enable_postgis_and_location || true) && prisma migrate deploy && node dist/src/main",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "prisma migrate deploy && node dist/main",
+    "start:prod": "prisma migrate deploy && node dist/src/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest --selectProjects unit",
     "test:watch": "jest --selectProjects unit --watch",
