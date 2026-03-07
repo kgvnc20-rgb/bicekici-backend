@@ -1,6 +1,9 @@
-import { Controller, Get, Put, Post, Query, Body, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Put, Post, UseGuards, Query, Body, BadRequestException } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { PricingService, PriceEstimate } from './pricing.service';
-import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PricingQuoteDto } from '../geo/dto/geo.dto';
 import { UpdatePricingConfigDto } from '../admin/dto/admin.dto';
 
@@ -17,6 +20,9 @@ export class PricingController {
 }
 
 @ApiTags('Admin')
+@ApiBearerAuth()
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@Roles('ADMIN')
 @Controller('admin')
 export class AdminPricingController {
     constructor(private readonly pricingService: PricingService) { }
